@@ -34,5 +34,5 @@ It also only runs based on the command found in the last comment of the merge re
 
 ### check_focus
 Often in our front end, jasmine specific keywords were forgotten and comitted (`fdescribe` and `fit`)
-This script check (without any command) whether and of the open merge request changes had those as added lines and if so
+This script checks (without any command) whether any of the open merge request changes had those as added lines and if so
 it commented on that.
