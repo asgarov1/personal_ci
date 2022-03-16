@@ -1,37 +1,20 @@
 #!/usr/bin/python3
-
 import os
 import subprocess
 import time
-from datetime import datetime
 
-import requests
+import urllib3
 
-from ci_constants import *
+from common.folder_util import delete_folder
+from common.http import get, post
+from common.log_util import write_to_log_file
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+from constants.eama_ci_constants import *
 
 TWO_MINUTES = 120
-
-
-def get(url):
-    return requests.get(
-        url,
-        headers={
-            "Authorization": GITLAB_TOKEN,
-            "Content-Type": "application/json",
-        },
-        verify=ENABLE_SSL_VERIFICATION,
-    ).json()
-
-
-def post(url):
-    return requests.post(
-        url,
-        headers={
-            "Authorization": GITLAB_TOKEN,
-            "Content-Type": "application/json",
-        },
-        verify=ENABLE_SSL_VERIFICATION,
-    ).json()
+FOCUS_KEYWORDS = ['fdescribe', 'fit']
 
 
 def get_open_merge_requests():
@@ -59,21 +42,11 @@ def run_test(branch='develop'):
         subprocess.check_output(command, shell=True)
         return True
     except subprocess.CalledProcessError as e:
-        write_to_log_file(e)
+        write_to_log_file(e, LOG_FOLDER)
         return False
     finally:
         # CLEANUP
         delete_folder(TEMP_TEST_FOLDER)
-
-
-def delete_folder(folder_name):
-    subprocess.run(f"rm -rf {folder_name}", shell=True)
-
-
-def write_to_log_file(e):
-    npm_output = e.output.decode("utf-8")
-    with open(datetime.now().strftime("./logs/D%m_%dT%H_%M.txt"), "w") as f:
-        f.write(npm_output)
 
 
 def get_comment(test_was_successful):
@@ -82,20 +55,24 @@ def get_comment(test_was_successful):
     return MESSAGES.get('tests_failed')
 
 
-def run_ci():
+def get_merge_request_to_test():
+    return list(filter(lambda mr: len(get_comments_for_merge_request(mr['iid'])) > 0 and
+                                  get_comments_for_merge_request(mr['iid'])[0]['body'].startswith(RUN_COMMAND),
+                       get_open_merge_requests()))
+
+
+def run_eama_frontend_ci():
     count = 0
-    test_successful = True
-    for merge_request in get_open_merge_requests():
-        latest_comment = get_comments_for_merge_request(merge_request['iid'])[0]
-        if latest_comment['body'].startswith(RUN_COMMAND):
-            count += 1
-            test_successful = run_test(merge_request['source_branch'])
-            comment = get_comment(test_successful)
-            post(f"{COMMENTS_FOR_MERGE_REQUEST_URL.replace(':iid', str(merge_request['iid']))}?body={comment}")
+    test_successful = 'nothing to report'
+    for merge_request in get_merge_request_to_test():
+        count += 1
+        test_successful = run_test(merge_request['source_branch'])
+        comment = get_comment(test_successful)
+        post(f"{COMMENTS_FOR_MERGE_REQUEST_URL.replace(':iid', str(merge_request['iid']))}?body={comment}")
 
     print(f'{count} tests were run - {test_successful}')
 
 
 while True:
-    run_ci()
+    run_eama_frontend_ci()
     time.sleep(TWO_MINUTES)
